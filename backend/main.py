@@ -1,9 +1,14 @@
 # backend/main.py
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Optional, List, Dict, Any
+from typing import Optional
 
+# Layer 1 imports
+from backend.layer1.dns_scanner import perform_domain_scan
+from backend.layer1.scorer import calculate_cyber_credit_score
+
+# Layer 2 imports
 from backend.layer2.session_store import get_or_create_session
 
 app = FastAPI(title="ThreatCapital: GhostGrid Engine", version="1.0.0")
@@ -44,30 +49,30 @@ class BubbleActionRequest(BaseModel):
 def health_check():
     return {"status": "GhostGrid Engine Active", "version": "1.0.0"}
 
-# Layer 1: Risk Scan (Mock preserved until Layer 1 scanner is written)
+# Layer 1: Live Risk Scan & Financial Quantification
 @app.post("/api/v1/scan")
 def scan_domain(req: ScanRequest):
+    raw_scan = perform_domain_scan(req.domain)
+    score_data = calculate_cyber_credit_score(raw_scan)
+
     return {
-        "domain": req.domain,
-        "score": 620,
-        "max_score": 850,
-        "rating": "POOR",
-        "financial_exposure_inr": 3450000,
+        "domain": raw_scan["domain"],
+        "score": score_data["score"],
+        "max_score": score_data["max_score"],
+        "rating": score_data["rating"],
+        "financial_exposure_inr": score_data["financial_exposure_inr"],
         "checks": {
-            "spf": {"status": "FAIL", "detail": "SoftFail ~all detected"},
-            "dmarc": {"status": "MISSING", "detail": "No DMARC record published"},
-            "hibp_breaches": {
-                "count": 14,
-                "pwned_emails": [f"accounts@{req.domain}"]
-            },
-            "open_ports": [80, 443, 3389]
+            "spf": raw_scan["spf"],
+            "dmarc": raw_scan["dmarc"],
+            "hibp_breaches": raw_scan["hibp_breaches"],
+            "open_ports": raw_scan["open_ports"]
         }
     }
 
 # Layer 2: Business DNA Auth Intercept
 @app.post("/api/v1/session/auth")
 def authenticate_session(req: AuthRequest):
-    # Rule check: Flag anomalies based on 12 AM - 5 AM or Tor network logins
+    # Anomaly detection: Tor exit node or anomalous off-hours login
     is_anomaly = "03:14" in req.timestamp or "Tor" in req.asn or "185.220" in req.ip
     
     session_id = "ghost-sess-9912"
@@ -96,7 +101,6 @@ def handle_bubble_action(req: BubbleActionRequest):
     session = get_or_create_session(req.session_id)
     result = session.process_command(req.command)
     
-    # Return structured response matching our frontend contract
     return {
         "session_id": session.session_id,
         "command": req.command,
