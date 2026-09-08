@@ -5,15 +5,19 @@ export default function RiskGauge({ onScanComplete }) {
   const [loading, setLoading] = useState(false);
   const [scanData, setScanData] = useState(null);
 
-  const handleScan = async (e) => {
-    e.preventDefault();
-    if (!domain) return;
+  // Core scan function
+  const runAuditForDomain = async (targetDomain) => {
+    const cleanDomain = targetDomain.trim();
+    if (!cleanDomain) return;
+
     setLoading(true);
+    setScanData(null); // Instantly clears the previous score while fetching
+
     try {
       const res = await fetch('http://127.0.0.1:8000/api/v1/scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ domain })
+        body: JSON.stringify({ domain: cleanDomain })
       });
       const data = await res.json();
       setScanData(data);
@@ -23,6 +27,26 @@ export default function RiskGauge({ onScanComplete }) {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Called when typing in the input: resets previous scan output
+  const handleDomainChange = (e) => {
+    setDomain(e.target.value);
+    if (scanData) {
+      setScanData(null); // Clear old results immediately on edit
+    }
+  };
+
+  // Manual submit via Enter / Button
+  const handleFormSubmit = (e) => {
+    e.preventDefault();
+    runAuditForDomain(domain);
+  };
+
+  // Quick Preset click: updates domain AND automatically runs the scan
+  const selectPreset = (presetDomain) => {
+    setDomain(presetDomain);
+    runAuditForDomain(presetDomain);
   };
 
   const getScoreColor = (score) => {
@@ -44,11 +68,12 @@ export default function RiskGauge({ onScanComplete }) {
           </span>
         </div>
 
-        <form onSubmit={handleScan} className="flex gap-2 mb-6">
+        {/* Input Form */}
+        <form onSubmit={handleFormSubmit} className="flex gap-2 mb-3">
           <input
             type="text"
             value={domain}
-            onChange={(e) => setDomain(e.target.value)}
+            onChange={handleDomainChange}
             placeholder="Enter business domain (e.g., target.com)"
             className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3.5 py-2 text-sm text-slate-100 focus:outline-none focus:border-cyan-500 font-mono"
           />
@@ -61,7 +86,30 @@ export default function RiskGauge({ onScanComplete }) {
           </button>
         </form>
 
-        {scanData ? (
+        {/* Demo Presets with Instant Refresh */}
+        <div className="flex gap-2 mb-6">
+          <button
+            type="button"
+            onClick={() => selectPreset('smb-logistics.internal')}
+            className="text-[11px] font-mono px-2.5 py-1 rounded bg-rose-950/40 text-rose-300 border border-rose-800/60 hover:bg-rose-900/50 transition-colors"
+          >
+            Preset: Vulnerable SMB
+          </button>
+          <button
+            type="button"
+            onClick={() => selectPreset('google.com')}
+            className="text-[11px] font-mono px-2.5 py-1 rounded bg-emerald-950/40 text-emerald-300 border border-emerald-800/60 hover:bg-emerald-900/50 transition-colors"
+          >
+            Preset: Hardened Corp
+          </button>
+        </div>
+
+        {/* Dynamic Display Area */}
+        {loading ? (
+          <div className="text-center py-12 text-cyan-400 font-mono text-xs border border-dashed border-slate-800 rounded-xl bg-slate-950/40 animate-pulse">
+            [Querying live DNS TXT records & analyzing risk exposure for {domain}...]
+          </div>
+        ) : scanData ? (
           <div className="space-y-6">
             {/* Score & Rating Hero */}
             <div className="flex items-center justify-around p-4 bg-slate-950/80 rounded-xl border border-slate-800">
@@ -99,7 +147,9 @@ export default function RiskGauge({ onScanComplete }) {
                 <div className="flex justify-between items-center mb-1">
                   <span className="text-slate-400 font-medium">SPF Record</span>
                   <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                    scanData.checks.spf.status === 'PASS' ? 'bg-emerald-950 text-emerald-400 border border-emerald-800' : 'bg-rose-950 text-rose-400 border border-rose-800'
+                    scanData.checks.spf.status === 'PASS'
+                      ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
+                      : 'bg-rose-950 text-rose-400 border border-rose-800'
                   }`}>
                     {scanData.checks.spf.status}
                   </span>
@@ -111,7 +161,9 @@ export default function RiskGauge({ onScanComplete }) {
                 <div className="flex justify-between items-center mb-1">
                   <span className="text-slate-400 font-medium">DMARC Policy</span>
                   <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                    scanData.checks.dmarc.status === 'PASS' ? 'bg-emerald-950 text-emerald-400 border border-emerald-800' : 'bg-rose-950 text-rose-400 border border-rose-800'
+                    scanData.checks.dmarc.status === 'PASS'
+                      ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
+                      : 'bg-rose-950 text-rose-400 border border-rose-800'
                   }`}>
                     {scanData.checks.dmarc.status}
                   </span>

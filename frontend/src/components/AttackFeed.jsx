@@ -1,11 +1,12 @@
 import React from 'react';
 
 export default function AttackFeed({ latestAction }) {
-  const depth = latestAction?.penetration_depth || 1;
+  // Default to 1, or read from backend action
+  const depth = latestAction?.penetration_depth !== undefined ? latestAction.penetration_depth : 1;
   const intent = latestAction?.intent_classification || 'Initial Infiltration (T1078)';
   const confidence = latestAction?.intent_confidence
     ? Math.round(latestAction.intent_confidence * 100)
-    : 95;
+    : 92;
 
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-xl flex flex-col justify-between">
@@ -20,7 +21,7 @@ export default function AttackFeed({ latestAction }) {
           </span>
         </div>
 
-        {/* Big Metric Box: Real Loss vs Exposure Prevented */}
+        {/* Big Metric Box */}
         <div className="grid grid-cols-2 gap-3 mb-6">
           <div className="p-3 bg-emerald-950/30 border border-emerald-900/60 rounded-xl text-center">
             <div className="text-[11px] text-emerald-400 uppercase tracking-wider font-semibold">
@@ -47,13 +48,27 @@ export default function AttackFeed({ latestAction }) {
         <div className="mb-6 p-4 bg-slate-950 rounded-xl border border-slate-800">
           <div className="flex justify-between items-center mb-2">
             <span className="text-xs font-semibold text-slate-300">Penetration Depth</span>
-            <span className="text-xs font-mono text-cyan-400 font-bold">Level {depth} of 3</span>
+            <span className={`text-xs font-mono font-bold ${
+              depth === 1 ? 'text-yellow-400' : depth === 2 ? 'text-orange-400' : 'text-rose-400'
+            }`}>
+              Level {depth} of 3
+            </span>
           </div>
 
-          <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden flex gap-1 p-0.5">
-            <div className={`h-full flex-1 rounded-full ${depth >= 1 ? 'bg-yellow-400' : 'bg-slate-700'}`} />
-            <div className={`h-full flex-1 rounded-full ${depth >= 2 ? 'bg-orange-500' : 'bg-slate-700'}`} />
-            <div className={`h-full flex-1 rounded-full ${depth >= 3 ? 'bg-rose-500' : 'bg-slate-700'}`} />
+          {/* 3 Step Bar */}
+          <div className="w-full bg-slate-800 h-2.5 rounded-full overflow-hidden flex gap-1 p-0.5">
+            {/* Step 1: Always lit if depth >= 1 */}
+            <div className={`h-full flex-1 rounded-full transition-all duration-300 ${
+              depth >= 1 ? 'bg-yellow-400' : 'bg-slate-700'
+            }`} />
+            {/* Step 2: Lit if depth >= 2 */}
+            <div className={`h-full flex-1 rounded-full transition-all duration-300 ${
+              depth >= 2 ? 'bg-orange-500' : 'bg-slate-700'
+            }`} />
+            {/* Step 3: Lit ONLY if depth >= 3 */}
+            <div className={`h-full flex-1 rounded-full transition-all duration-300 ${
+              depth >= 3 ? 'bg-rose-500' : 'bg-slate-700'
+            }`} />
           </div>
 
           <div className="flex justify-between text-[10px] text-slate-400 mt-2">
@@ -63,10 +78,10 @@ export default function AttackFeed({ latestAction }) {
           </div>
         </div>
 
-        {/* AI Intent & Honeyfile Card */}
+        {/* Threat Classification */}
         <div className="p-4 bg-slate-950 rounded-xl border border-slate-800 space-y-2.5">
           <div className="text-[11px] text-slate-400 uppercase tracking-widest font-semibold">
-            Live AI Threat Classification
+            Live Threat Classification
           </div>
 
           <div className="flex items-center justify-between">
