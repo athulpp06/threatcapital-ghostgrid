@@ -26,9 +26,10 @@ def get_or_create_session(session_id: Optional[str] = None) -> Dict[str, Any]:
 
 def execute_command(session_id: str, command_str: str) -> Dict[str, Any]:
     session = get_or_create_session(session_id)
-    # update last activity timestamp for this session
-    session["last_activity"] = time.time()
     cmd_clean = command_str.strip()
+    # Empty commands are read-only telemetry requests from the defender console.
+    if cmd_clean:
+        session["last_activity"] = time.time()
     # ensure a numeric prevented exposure field exists for the session
     session.setdefault("prevented_exposure_inr", 0)
     session.setdefault("actual_loss_inr", 0)

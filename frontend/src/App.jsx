@@ -1,20 +1,90 @@
-import React, { useState } from 'react';
+import { useEffect, useState } from 'react';
 import RiskGauge from './components/RiskGauge';
 import Terminal from './components/Terminal';
 import AttackFeed from './components/AttackFeed';
 
 export default function App() {
-  const [latestAction, setLatestAction] = useState(null);
+  const [sessionState, setSessionState] = useState({
+    penetration_level: 1,
+    attacker_intent: 'Initial Infiltration (T1078)',
+    llm_response: '',
+    confidence: 0,
+    recommended_actions: [],
+    actual_loss_inr: 0,
+    prevented_exposure_inr: 0,
+    command_history: []
+  });
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleCommandResult = (result, command) => {
+    setSessionState((previous) => ({
+      ...previous,
+      penetration_level: result.penetration_level ?? result.penetration_depth ?? previous.penetration_level,
+      attacker_intent: result.attacker_intent ?? result.intent_classification ?? previous.attacker_intent,
+      llm_response: result.llm_response ?? (result.generated_filename ? result.output : ''),
+      confidence: result.confidence ?? result.intent_confidence ?? previous.confidence,
+      recommended_actions: result.recommended_actions ?? [],
+      actual_loss_inr: result.actual_loss_inr ?? previous.actual_loss_inr,
+      prevented_exposure_inr: result.prevented_exposure_inr ?? previous.prevented_exposure_inr,
+      command_history: [...previous.command_history, { command, result }]
+    }));
+    setIsLoading(false);
+  };
 
   const queryParams = new URLSearchParams(window.location.search);
   const isHackerMode = queryParams.get('mode') === 'hacker';
   // Ensure a single persistent session id is created once for the app so all components share it
-  const sessionKey = 'ghost_session_id';
-  let sessionId = localStorage.getItem(sessionKey);
-  if (!sessionId) {
-    sessionId = `ghost-sess-${Date.now().toString(16)}-${Math.floor(Math.random()*0xffff).toString(16)}`;
-    try { localStorage.setItem(sessionKey, sessionId); } catch (e) {}
-  }
+  const [sessionId] = useState(() => {
+    const sessionKey = 'ghost_session_id';
+    let id = localStorage.getItem(sessionKey);
+    if (!id) {
+      id = `ghost-sess-${Date.now().toString(16)}-${Math.floor(Math.random()*0xffff).toString(16)}`;
+      try { localStorage.setItem(sessionKey, id); } catch { /* Storage may be unavailable. */ }
+    }
+    return id;
+  });
+
+  useEffect(() => {
+    if (isHackerMode) return undefined;
+
+    let isCancelled = false;
+
+    const syncLatestSession = async () => {
+      try {
+        const host = window.location.hostname || '127.0.0.1';
+        const sessionsResponse = await fetch(`http://${host}:8000/api/v1/bubble/sessions`, {
+          cache: 'no-store'
+        });
+        if (!sessionsResponse.ok) return;
+
+        const { sessions = [] } = await sessionsResponse.json();
+        const latestSession = [...sessions].sort(
+          (left, right) => (right.last_activity || 0) - (left.last_activity || 0)
+        )[0];
+        if (!latestSession?.session_id || isCancelled) return;
+
+        const telemetryResponse = await fetch(`http://${host}:8000/api/v1/bubble/action`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' },
+          cache: 'no-store',
+          body: JSON.stringify({ session_id: latestSession.session_id, command: '' })
+        });
+        if (!telemetryResponse.ok || isCancelled) return;
+
+        const telemetry = await telemetryResponse.json();
+        handleCommandResult(telemetry, '[remote session update]');
+      } catch {
+        // The defender console retries on the next refresh interval.
+      }
+    };
+
+    syncLatestSession();
+    const intervalId = setInterval(syncLatestSession, 1000);
+    return () => {
+      isCancelled = true;
+      clearInterval(intervalId);
+    };
+  }, [isHackerMode]);
 
   if (isHackerMode) {
     return (
@@ -34,7 +104,10 @@ export default function App() {
             </span>
           </div>
           <div className="border-x border-b border-slate-800 rounded-b-xl overflow-hidden shadow-2xl">
-            <Terminal onActionExecuted={(action) => setLatestAction(action)} />
+            <Terminal
+              onCommandStart={() => setIsLoading(true)}
+              onCommandResult={handleCommandResult}
+            />
           </div>
           <div className="mt-3 text-right text-[11px] text-slate-600">
             Escaped sandbox routing: DISABLED | Session ID: {sessionId}
@@ -70,7 +143,7 @@ export default function App() {
 
       <main className="flex-1 p-6 max-w-[1500px] mx-auto w-full grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch">
         <RiskGauge />
-        <AttackFeed latestAction={latestAction} />
+        <AttackFeed sessionState={sessionState} isLoading={isLoading} />
       </main>
 
       <footer className="border-t border-slate-800/80 px-6 py-3 bg-slate-950 text-[11px] text-slate-500 flex justify-between items-center font-mono">

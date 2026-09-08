@@ -74,6 +74,38 @@ Notes: the frontend uses `localStorage` key `ghost_session_id` to persist the se
 - If different domains produce identical scores, check that DNS resolution works from the environment where the backend runs. When DNS fails we fall back to deterministic heuristics, which may look similar across domains.
 - If Layer‑2 telemetry doesn't update, ensure both `Terminal` and `AttackFeed` use the same `ghost_session_id` in `localStorage`.
 
+## Layer 2: Verification & Testing
+If you want to verify the deception engine and that the defender UI updates live, follow these short checks.
+
+1) Start backend and frontend (see Quickstart above).
+
+2) Open the attacker shell in a browser tab (append `?mode=hacker` to the UI URL). Note the `Session ID` shown in the header — this is the `ghost_session_id` used by the terminal.
+
+3) Run a command in the attacker shell, for example:
+
+```
+search payroll
+```
+
+4) From any machine (or the defender tab), poll the sessions endpoint to see active sessions and activity timestamps:
+
+```powershell
+curl http://localhost:8000/api/v1/bubble/sessions
+```
+
+5) Poll the session telemetry directly (replace the session id):
+
+```powershell
+curl -X POST http://localhost:8000/api/v1/bubble/action -H "Content-Type: application/json" -d '{"session_id":"<session_id_here>","command":""}'
+```
+
+6) Expected behavior:
+- The sessions list shows the attacker session with a recent `last_activity` timestamp.
+- The `POST /api/v1/bubble/action` response includes `penetration_depth`, `prevented_exposure_inr`, `generated_filename`, and `output` (LLM content or fallback). 
+- The defender UI (`AttackFeed`) should automatically follow the active session (or you can reload to pick up `ghost_session_id`) and display the generated LLM content, updated `Prevented` amount, and the penetration-level progress bar.
+
+If the UI doesn't reflect the changes, confirm the browser running the defender UI has the same backend host/port and that there are no CORS/network issues.
+
 ## Project structure (high level)
 - `backend/` — FastAPI app, Layer 1 scans and Layer 2 deception/session code.
 - `frontend/` — React + Vite UI, components under `src/components`.

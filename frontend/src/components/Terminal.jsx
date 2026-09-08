@@ -1,12 +1,15 @@
-import React, { useState, useRef, useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
-export default function Terminal({ onActionExecuted }) {
+export default function Terminal({ onCommandStart, onCommandResult }) {
   const sessionKey = 'ghost_session_id';
-  let initialSessionId = localStorage.getItem(sessionKey);
-  if (!initialSessionId) {
-    initialSessionId = `ghost-sess-${Date.now().toString(16)}-${Math.floor(Math.random()*0xffff).toString(16)}`;
-    try { localStorage.setItem(sessionKey, initialSessionId); } catch (e) {}
-  }
+  const [initialSessionId] = useState(() => {
+    let id = localStorage.getItem(sessionKey);
+    if (!id) {
+      id = `ghost-sess-${Date.now().toString(16)}-${Math.floor(Math.random() * 0xffff).toString(16)}`;
+      try { localStorage.setItem(sessionKey, id); } catch { /* Storage may be unavailable. */ }
+    }
+    return id;
+  });
 
   const [history, setHistory] = useState([
     { type: 'system', content: `Connected to internal SMB node (Session: ${initialSessionId})` },
@@ -29,6 +32,7 @@ export default function Terminal({ onActionExecuted }) {
     setHistory((prev) => [...prev, { type: 'command', content: trimmed }]);
     setInput('');
     setIsExecuting(true);
+    onCommandStart?.();
 
     try {
       const host = window.location.hostname || '127.0.0.1';
@@ -37,7 +41,7 @@ export default function Terminal({ onActionExecuted }) {
       let sessionId = localStorage.getItem(sessionKey);
       if (!sessionId) {
         sessionId = `ghost-sess-${Date.now().toString(16)}-${Math.floor(Math.random()*0xffff).toString(16)}`;
-        try { localStorage.setItem(sessionKey, sessionId); } catch (e) {}
+        try { localStorage.setItem(sessionKey, sessionId); } catch { /* Storage may be unavailable. */ }
       }
 
       const res = await fetch(`http://${host}:8000/api/v1/bubble/action`, {
@@ -49,8 +53,13 @@ export default function Terminal({ onActionExecuted }) {
       if (!res.ok) throw new Error(`HTTP Error ${res.status}`);
       const data = await res.json();
 
+      // attach the session id used for this command so other components can follow it
+      try {
+        data.session_id = sessionId;
+      } catch { /* The response object is still usable without this annotation. */ }
+
       setHistory((prev) => [...prev, { type: 'output', content: data.output || 'Command executed.' }]);
-      if (onActionExecuted) onActionExecuted(data);
+      onCommandResult?.(data, trimmed);
     } catch (err) {
       setHistory((prev) => [...prev, { type: 'error', content: `Error: Unable to connect to backend engine: ${err.message}` }]);
     } finally {
