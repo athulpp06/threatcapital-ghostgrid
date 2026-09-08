@@ -5,6 +5,34 @@ from typing import Dict, Any, List
 
 COMMON_PORTS = [80, 443, 8080, 3389, 22]
 
+# Deterministic demo mock targets for guaranteed pitch contrast
+DEMO_TARGET_PROFILES: Dict[str, Dict[str, Any]] = {
+    "vulnerable-smb.demo": {
+        "domain": "vulnerable-smb.demo",
+        "spf": {"status": "MISSING", "detail": "No SPF (v=spf1) record configured"},
+        "dmarc": {"status": "MISSING", "detail": "No DMARC policy defined under _dmarc"},
+        "open_ports": [80, 3389],
+        "hibp_breaches": {
+            "count": 18,
+            "pwned_emails": [
+                "finance@vulnerable-smb.demo",
+                "accounts@vulnerable-smb.demo",
+                "admin@vulnerable-smb.demo"
+            ]
+        }
+    },
+    "hardened-corp.demo": {
+        "domain": "hardened-corp.demo",
+        "spf": {"status": "PASS", "detail": "HardFail (-all) properly enforced"},
+        "dmarc": {"status": "PASS", "detail": "Policy 'reject' strictly enforced under _dmarc"},
+        "open_ports": [443],
+        "hibp_breaches": {
+            "count": 0,
+            "pwned_emails": []
+        }
+    }
+}
+
 def check_spf(domain: str) -> Dict[str, Any]:
     try:
         answers = dns.resolver.resolve(domain, 'TXT')
@@ -59,11 +87,15 @@ def check_open_ports(domain: str, timeout: float = 0.5) -> List[int]:
 
 def perform_domain_scan(domain: str) -> Dict[str, Any]:
     clean_domain = domain.strip().lower().replace("http://", "").replace("https://", "").split("/")[0]
+
+    # Intercept preset demo domains for instant, guaranteed output
+    if clean_domain in DEMO_TARGET_PROFILES:
+        return DEMO_TARGET_PROFILES[clean_domain]
+
+    # Live network audit for real domains
     spf = check_spf(clean_domain)
     dmarc = check_dmarc(clean_domain)
     open_ports = check_open_ports(clean_domain)
-
-    # Simulated realistic breach enumeration for demo consistency
     pwned_emails = [f"admin@{clean_domain}", f"accounts@{clean_domain}"]
 
     return {

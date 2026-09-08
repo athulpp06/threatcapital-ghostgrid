@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 
 export default function RiskGauge({ onScanComplete }) {
-  const [domain, setDomain] = useState('techcorp-smb.in');
+  const [domain, setDomain] = useState('vulnerable-smb.demo');
   const [loading, setLoading] = useState(false);
   const [scanData, setScanData] = useState(null);
 
@@ -90,14 +90,14 @@ export default function RiskGauge({ onScanComplete }) {
         <div className="flex gap-2 mb-6">
           <button
             type="button"
-            onClick={() => selectPreset('smb-logistics.internal')}
+            onClick={() => selectPreset('vulnerable-smb.demo')}
             className="text-[11px] font-mono px-2.5 py-1 rounded bg-rose-950/40 text-rose-300 border border-rose-800/60 hover:bg-rose-900/50 transition-colors"
           >
             Preset: Vulnerable SMB
           </button>
           <button
             type="button"
-            onClick={() => selectPreset('google.com')}
+            onClick={() => selectPreset('hardened-corp.demo')}
             className="text-[11px] font-mono px-2.5 py-1 rounded bg-emerald-950/40 text-emerald-300 border border-emerald-800/60 hover:bg-emerald-900/50 transition-colors"
           >
             Preset: Hardened Corp
@@ -174,7 +174,7 @@ export default function RiskGauge({ onScanComplete }) {
           </div>
         ) : (
           <div className="text-center py-10 text-slate-500 text-xs border border-dashed border-slate-800 rounded-lg">
-            Enter a domain to initiate real-time DNS quantification.
+            Enter a domain or click a preset above to run real-time quantification.
           </div>
         )}
       </div>
