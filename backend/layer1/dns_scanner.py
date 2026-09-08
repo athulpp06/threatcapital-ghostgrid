@@ -48,7 +48,9 @@ def check_spf(domain: str) -> Dict[str, Any]:
                 return {"status": "PASS", "detail": "Valid SPF record present"}
         return {"status": "MISSING", "detail": "No SPF (v=spf1) record found"}
     except Exception as e:
-        return {"status": "MISSING", "detail": f"DNS lookup error: {str(e)}"}
+        # Treat DNS lookup failures as UNKNOWN rather than MISSING so public
+        # domains that don't resolve in this environment aren't overly penalized.
+        return {"status": "UNKNOWN", "detail": f"DNS lookup error: {str(e)}"}
 
 def check_dmarc(domain: str) -> Dict[str, Any]:
     dmarc_domain = f"_dmarc.{domain}"
@@ -66,7 +68,8 @@ def check_dmarc(domain: str) -> Dict[str, Any]:
                 return {"status": "PASS", "detail": "DMARC record present"}
         return {"status": "MISSING", "detail": "No DMARC record found"}
     except Exception as e:
-        return {"status": "MISSING", "detail": "No DMARC record found under _dmarc"}
+        # DNS errors -> UNKNOWN so the scorer can apply a lighter penalty
+        return {"status": "UNKNOWN", "detail": f"DNS lookup error: {str(e)}"}
 
 def check_open_ports(domain: str, timeout: float = 0.5) -> List[int]:
     open_ports = []

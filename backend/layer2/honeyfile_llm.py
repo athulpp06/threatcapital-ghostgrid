@@ -1,53 +1,66 @@
-# backend/layer2/honeyfile_llm.py
 import os
-import json
-from google import genai
-from google.genai import types
+from typing import Dict, Any
 from dotenv import load_dotenv
 
 load_dotenv()
 
-api_key = os.getenv("GEMINI_API_KEY")
-client = genai.Client(api_key=api_key) if api_key else None
+def generate_dynamic_honeyfile(query: str) -> Dict[str, Any]:
+    api_key = os.getenv("GEMINI_API_KEY")
+    
+    clean_tag = "".join(c for c in query.lower() if c.isalnum() or c in (" ", "_", "-")).strip()
+    words = clean_tag.split()[:3]
+    file_slug = "_".join(words) if words else "financial_audit"
+    target_filename = f"confidential_{file_slug}_q3.xlsx"
 
-def generate_reactive_honeyfile(query: str) -> dict:
-    if not client:
-        return {
-            "filename": f"{query.replace(' ', '_')}_confidential.txt",
-            "preview_snippet": f"CONFIDENTIAL // Target Asset: {query}. Canary ID: cnry_fallback_009.",
-            "intent": "Data Theft / Reconnaissance",
-            "confidence": 0.85
-        }
+    fallback_result = {
+        "filename": target_filename,
+        "content": (
+            f"# CONFIDENTIAL INTERNAL AUDIT RECORD - QUERY: {query.upper()}\n"
+            f"# GENERATED ON-DEMAND CANARY ASSET\n"
+            "-------------------------------------------------------------\n"
+            "RECORD_ID | ENTITY              | AMOUNT (INR) | STATUS\n"
+            "TX-88219  | Vendor Settlement   | [REDACTED]   | PROCESSED\n"
+            "TX-88220  | Executive Bonus Q2  | [REDACTED]   | PENDING\n"
+            "TX-88221  | Offshore Wire (UAE) | [REDACTED]   | QUEUED\n"
+            "-------------------------------------------------------------\n"
+            "[!] CANARY BEACON: token_dynamic_synthetic_trace_active_8841"
+        ),
+        "intent_classification": "Financial Fraud / BEC",
+        "confidence": 0.94
+    }
 
-    system_instruction = (
-        "You are GhostGrid's active cyber deception engine. "
-        "An unauthorized intruder entered a search query inside an SMB's internal network. "
-        "Synthesize a believable file name, a 1-to-2 sentence document preview snippet containing fake realistic credentials "
-        "or canary tokens (e.g., IFSC, fake account numbers, fake tokens), and classify the attacker's intent "
-        "('Financial Fraud / BEC', 'Data Theft / Reconnaissance', or 'Ransomware / Lateral Movement') with a confidence float between 0.80 and 0.99.\n\n"
-        "Return strictly valid JSON matching this schema:\n"
-        "{\n"
-        '  "filename": "string",\n'
-        '  "preview_snippet": "string",\n'
-        '  "intent": "string",\n'
-        '  "confidence": 0.95\n'
-        "}"
-    )
+    if not api_key:
+        return fallback_result
 
     try:
+        from google import genai
+        client = genai.Client(api_key=api_key)
+        
+        prompt = f"""
+        You are an autonomous cyber deception engine (Honeypot generator).
+        An attacker inside a simulated compromised SMB shell just executed the query: "{query}".
+
+        Generate a short, hyper-realistic, authentic-looking decoy file content (maximum 12 lines) that satisfies their curiosity. 
+        It could look like a CSV, JSON, or plaintext financial record, invoice, or wire transfer statement.
+        Always include this exact canary token string at the bottom: 
+        [!] CANARY BEACON: token_dynamic_synthetic_trace_active_8841
+
+        Return ONLY the raw document text, without Markdown formatting or explanations.
+        """
+
         response = client.models.generate_content(
             model="gemini-2.5-flash",
-            contents=f"Attacker query: '{query}'",
-            config=types.GenerateContentConfig(
-                system_instruction=system_instruction,
-                response_mime_type="application/json"
-            )
+            contents=prompt,
         )
-        return json.loads(response.text)
-    except Exception as e:
+
+        content = response.text.strip() if response.text else fallback_result["content"]
+
         return {
-            "filename": f"{query.replace(' ', '_')}_export.csv",
-            "preview_snippet": f"CONFIDENTIAL DRAFT // {query} (Tracking canary: cnry_err_{abs(hash(query)) % 1000})",
-            "intent": "Financial Fraud / BEC",
-            "confidence": 0.91
+            "filename": target_filename,
+            "content": content,
+            "intent_classification": "Financial Fraud / BEC" if any(w in query.lower() for w in ["wire", "transfer", "bank", "pay", "money", "fund"]) else "Data Exfiltration",
+            "confidence": 0.96
         }
+
+    except Exception:
+        return fallback_result

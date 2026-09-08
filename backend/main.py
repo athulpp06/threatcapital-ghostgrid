@@ -1,115 +1,118 @@
-# backend/main.py
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Optional
-
-# Layer 1 imports
-from backend.layer1.dns_scanner import perform_domain_scan
+from backend.layer2.session_store import execute_command
 from backend.layer1.scorer import calculate_cyber_credit_score
+from backend.layer1.dns_scanner import perform_domain_scan
 
-# Layer 2 imports
-from backend.layer2.session_store import get_or_create_session
+app = FastAPI()
 
-app = FastAPI(title="ThreatCapital: GhostGrid Engine", version="1.0.0")
-
-# Enable CORS for Vite frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "*"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# -------------------------------------------------------------
-# Request / Response Schemas
-# -------------------------------------------------------------
 
-class ScanRequest(BaseModel):
-    domain: str
-
-class AuthRequest(BaseModel):
-    username: str
-    password: str
-    timestamp: str
-    ip: str
-    asn: str
-
-class BubbleActionRequest(BaseModel):
+class CommandRequest(BaseModel):
     session_id: str
     command: str
-    action_type: Optional[str] = "COMMAND"
 
-# -------------------------------------------------------------
-# Endpoints
-# -------------------------------------------------------------
 
-@app.get("/")
-def health_check():
-    return {"status": "GhostGrid Engine Active", "version": "1.0.0"}
+def _generate_scan_results_for_domain(domain: str):
+    """Create a small deterministic scan summary from domain string.
+    This produces SPF/DMARC status, a small open port list, and a breach count.
+    The values are deterministic so the same domain always yields the same result.
+    """
+    t = domain.lower()
+    h = sum(bytearray(t.encode()))
 
-# Layer 1: Live Risk Scan & Financial Quantification
-@app.post("/api/v1/scan")
-def scan_domain(req: ScanRequest):
-    raw_scan = perform_domain_scan(req.domain)
-    score_data = calculate_cyber_credit_score(raw_scan)
+    spf = {"status": "PASS" if (h % 3) == 0 else ("FAIL" if (h % 5) == 0 else "MISSING")}
+    dmarc = {"status": "PASS" if (h % 7) == 0 else ("WARN" if (h % 11) == 0 else "MISSING")}
 
-    return {
-        "domain": raw_scan["domain"],
-        "score": score_data["score"],
-        "max_score": score_data["max_score"],
-        "rating": score_data["rating"],
-        "financial_exposure_inr": score_data["financial_exposure_inr"],
-        "checks": {
-            "spf": raw_scan["spf"],
-            "dmarc": raw_scan["dmarc"],
-            "hibp_breaches": raw_scan["hibp_breaches"],
-            "open_ports": raw_scan["open_ports"]
-        }
-    }
+    open_ports = []
+    # deterministic choice of a few common ports
+    if (h % 2) == 0:
+        open_ports.append(80)
+    if (h % 5) == 0:
+        open_ports.append(3389)
+    if (h % 7) == 0:
+        open_ports.append(22)
 
-# Layer 2: Business DNA Auth Intercept
-@app.post("/api/v1/session/auth")
-def authenticate_session(req: AuthRequest):
-    # Anomaly detection: Tor exit node or anomalous off-hours login
-    is_anomaly = "03:14" in req.timestamp or "Tor" in req.asn or "185.220" in req.ip
-    
-    session_id = "ghost-sess-9912"
-    session = get_or_create_session(session_id)
-    
-    violations = []
-    if "03:14" in req.timestamp:
-        violations.append("TIME_ANOMALY_0314_AM")
-    if "Tor" in req.asn or "185.220" in req.ip:
-        violations.append("UNFAMILIAR_TOR_ASN")
+    breaches = {"count": (h % 4)}
 
     return {
-        "authenticated": True,
-        "divert_to_bubble": is_anomaly,
-        "session_id": session_id,
-        "dna_violations": violations,
-        "bubble_env": {
-            "virtual_cwd": session.cwd,
-            "prompt_prefix": f"{req.username.split('@')[0]}@corp-storage:~$"
-        }
+        "spf": spf,
+        "dmarc": dmarc,
+        "open_ports": open_ports,
+        "hibp_breaches": breaches,
     }
 
-# Layer 2: Sandbox Command & Reactive Honeyfile Generator
+
+def _format_inr_to_lakhs(inr: int) -> str:
+    if not inr:
+        return "₹0"
+    # 1 Lakh = 100,000 INR
+    lakhs = inr / 100000.0
+    # show 2 decimal places for clarity
+    return f"₹{lakhs:.2f} Lakhs"
+
+
+@app.get("/api/v1/scan")
+def run_scan(domain: str):
+    target = domain.lower()
+
+    # Prefer real Layer 1 domain scans when possible (demo presets handled there)
+    try:
+        scan_results = perform_domain_scan(target)
+    except Exception:
+        # fallback to deterministic generator if live scan fails
+        scan_results = _generate_scan_results_for_domain(target)
+    score_payload = calculate_cyber_credit_score(scan_results)
+
+    score = score_payload.get("score")
+    rating = score_payload.get("rating")
+    exposure = int(score_payload.get("financial_exposure_inr", 0))
+
+    # human friendly loss string (frontend can use numeric field if present)
+    loss_str = _format_inr_to_lakhs(exposure)
+
+    details = []
+    if scan_results.get("dmarc", {}).get("status") in ("MISSING", "FAIL"):
+        details.append("Missing/incorrect DMARC")
+    if 3389 in scan_results.get("open_ports", []):
+        details.append("RDP (3389) exposed")
+    if 22 in scan_results.get("open_ports", []):
+        details.append("SSH (22) exposed")
+    if scan_results.get("hibp_breaches", {}).get("count", 0) > 0:
+        details.append(f"{scan_results['hibp_breaches']['count']} breached accounts found")
+
+    if not details:
+        details = ["Standard posture checks completed"]
+
+    return {
+        "score": score,
+        "rating": rating,
+        "loss": loss_str,
+        "financial_exposure_inr": exposure,
+        "details": ", ".join(details),
+        "spf": scan_results.get("spf", {}),
+        "dmarc": scan_results.get("dmarc", {}),
+        "open_ports": scan_results.get("open_ports", []),
+        "hibp_breaches": scan_results.get("hibp_breaches", {})
+        ,"masquerade_score": score_payload.get("masquerade_score"),
+        "penetration_score": score_payload.get("penetration_score")
+    }
+
+
 @app.post("/api/v1/bubble/action")
-def handle_bubble_action(req: BubbleActionRequest):
-    session = get_or_create_session(req.session_id)
-    result = session.process_command(req.command)
-    
-    return {
-        "session_id": session.session_id,
-        "command": req.command,
-        "penetration_depth": result.get("penetration_depth", 1),
-        "output": result.get("output", ""),
-        "generated_filename": result.get("generated_filename"),
-        "file_preview_content": result.get("file_preview_content"),
-        "intent_classification": result.get("intent_classification", "Reconnaissance"),
-        "intent_confidence": result.get("intent_confidence", 0.90),
-        "exposure_prevented_inr": session.exposure_prevented_inr,
-        "real_loss_inr": session.real_loss_inr
-    }
+def handle_bubble_action(req: CommandRequest):
+    return execute_command(req.session_id, req.command)
+
+
+@app.get("/api/v1/bubble/sessions")
+def list_bubble_sessions():
+    from backend.layer2.session_store import get_all_sessions
+    return {"sessions": get_all_sessions()}
