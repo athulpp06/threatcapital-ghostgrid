@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 
 export default function RiskGauge() {
   const [domain, setDomain] = useState('');
@@ -38,7 +38,7 @@ export default function RiskGauge() {
         ,masquerade_score: data.masquerade_score,
         penetration_score: data.penetration_score
       });
-    } catch (err) {
+    } catch {
       // Fallback demo behavior when backend is unreachable or errors
       setTimeout(() => {
         if (target.includes('vulnerable') || target === 'vulnerable-smb.demo') {
